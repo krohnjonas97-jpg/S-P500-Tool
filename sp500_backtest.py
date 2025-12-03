@@ -124,17 +124,98 @@ def moving_average_crossover_backtest(
     )
 
 
+def consecutive_down_day_leverage_backtest(
+    price_data: pd.DataFrame,
+    negative_days_required: int = 1,
+    leverage: float = 3.0,
+    initial_capital: float = 10_000.0,
+) -> BacktestResult:
+    """Backtest a leveraged long entry after consecutive down days.
+
+    The strategy stays in cash until the previous ``negative_days_required``
+    sessions all posted negative returns. On the following session it goes
+    ``leverage`` times long for that day only. Positions are reset to cash
+    at each close and the strategy never shorts.
+
+    Parameters
+    ----------
+    price_data:
+        ``pandas.DataFrame`` with a ``Close`` column.
+    negative_days_required:
+        Number of consecutive negative return days that must occur before a
+        leveraged long position is opened the next day. Must be at least 1.
+    leverage:
+        Size of the leveraged long exposure applied when the condition is met.
+    initial_capital:
+        Starting cash value.
+
+    Returns
+    -------
+    BacktestResult
+        Summary metrics plus the equity curve.
+    """
+
+    if negative_days_required < 1:
+        raise ValueError("negative_days_required must be at least 1")
+
+    prices = price_data["Close"].copy()
+    if prices.isna().all():
+        raise ValueError("Price series contains only NaN values.")
+
+    daily_returns = prices.pct_change().fillna(0)
+    negative_flags = daily_returns < 0
+
+    negative_run_met = (
+        negative_flags.rolling(
+            window=negative_days_required, min_periods=negative_days_required
+        )
+        .apply(lambda window: 1.0 if bool(window.all()) else 0.0)
+        .fillna(0)
+    )
+
+    # Shift so that today's position is based solely on yesterday's information
+    signals = negative_run_met.shift(1).fillna(0)
+
+    strategy_returns = daily_returns * leverage * signals
+    equity_curve = (1 + strategy_returns).cumprod() * initial_capital
+
+    final_value = float(equity_curve.iloc[-1])
+    total_return = (final_value - initial_capital) / initial_capital
+    trades = int((signals > 0).sum())
+
+    return BacktestResult(
+        initial_capital=initial_capital,
+        final_portfolio_value=final_value,
+        total_return=total_return,
+        trades=trades,
+        equity_curve=equity_curve,
+    )
+
+
 def main():
     """Example execution printing a simple summary to stdout."""
 
     data = download_sp500_data(start="2015-01-01")
-    result = moving_average_crossover_backtest(data)
+    crossover_result = moving_average_crossover_backtest(data)
 
     print("Simple Moving Average Crossover (50/200) on S&P 500")
-    print(f"Initial capital: ${result.initial_capital:,.2f}")
-    print(f"Final portfolio value: ${result.final_portfolio_value:,.2f}")
-    print(f"Total return: {result.total_return:.2%}")
-    print(f"Trades executed: {result.trades}")
+    print(f"Initial capital: ${crossover_result.initial_capital:,.2f}")
+    print(f"Final portfolio value: ${crossover_result.final_portfolio_value:,.2f}")
+    print(f"Total return: {crossover_result.total_return:.2%}")
+    print(f"Trades executed: {crossover_result.trades}\n")
+
+    for negative_days in (1, 2, 3):
+        leverage_result = consecutive_down_day_leverage_backtest(
+            data, negative_days_required=negative_days
+        )
+        print(
+            "Leveraged long after negative days: "
+            f"{negative_days} down-day trigger"
+        )
+        print(f"Initial capital: ${leverage_result.initial_capital:,.2f}")
+        print(f"Final portfolio value: ${leverage_result.final_portfolio_value:,.2f}")
+        print(f"Total return: {leverage_result.total_return:.2%}")
+        print(f"Trades executed: {leverage_result.trades}\n")
 
 
 if __name__ == "__main__":

@@ -90,7 +90,15 @@ def moving_average_crossover_backtest(
         Summary metrics plus the equity curve.
     """
 
-    prices = price_data["Close"].copy()
+    prices = price_data["Close"]
+    if isinstance(prices, pd.DataFrame):
+        # yfinance may return a DataFrame when using multi-index columns; reduce
+        # to a Series when only a single close column is present.
+        if prices.shape[1] > 1:
+            raise ValueError("Expected a single Close price series")
+        prices = prices.squeeze(axis=1)
+
+    prices = prices.copy()
     if prices.isna().all():
         raise ValueError("Price series contains only NaN values.")
 
@@ -158,7 +166,13 @@ def consecutive_down_day_leverage_backtest(
     if negative_days_required < 1:
         raise ValueError("negative_days_required must be at least 1")
 
-    prices = price_data["Close"].copy()
+    prices = price_data["Close"]
+    if isinstance(prices, pd.DataFrame):
+        if prices.shape[1] > 1:
+            raise ValueError("Expected a single Close price series")
+        prices = prices.squeeze(axis=1)
+
+    prices = prices.copy()
     if prices.isna().all():
         raise ValueError("Price series contains only NaN values.")
 

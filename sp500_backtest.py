@@ -195,7 +195,7 @@ def consecutive_down_day_leverage_backtest(
 def main():
     """Example execution printing a simple summary to stdout."""
 
-    data = download_sp500_data(start="2015-01-01")
+    data = download_sp500_data(start="1980-01-01")
     crossover_result = moving_average_crossover_backtest(data)
 
     print("Simple Moving Average Crossover (50/200) on S&P 500")
